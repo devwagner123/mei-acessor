@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0F172A" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="MEI Assessor" />
+  <title>MEI Assessor</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+    html,body,#root{height:100%;background:#0F172A;color:#F1F5F9;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','Helvetica Neue',sans-serif;-webkit-font-smoothing:antialiased;overflow:hidden}
+    button,input,select{font-family:inherit}
+    ::-webkit-scrollbar{display:none}
+    @keyframes bounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-5px)}}
+    @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useRef,useEffect}=React;
+const FIXAS=5896,LIMITE=81000;
+const CARTOES=[2650,1702,740,492,372,0];
+const MESES_P=['Jul','Ago','Set','Out','Nov','Dez'];
+const SALDOS=[27288,4402,5364,5612,5732,6104];
+const CK_BASE=[
+  {a:'Quitar moto (pagar R$ 11k à financeira)',i:'Elimina R$ 44k de dívida'},
+  {a:'Receber R$ 22k do comprador da moto',i:'Lucro líquido de R$ 11k'},
+  {a:'Transferir R$ 17.000 → reserva emergência',i:'Reserva de 3 meses completa'},
+  {a:'Transferir R$ 5.000 → reserva bebê',i:'Chegada da filha garantida'},
+  {a:'Quitar MEI no gov.br/regularize',i:'Zero dívida com a Receita Federal'},
+  {a:'Abrir conta separada (Nubank ou Inter)',i:'Dinheiro que rende e não mistura'},
+];
+const fmt=v=>'R$ '+Math.abs(Number(v)).toFixed(2).replace('.',',').replace(/\B(?=(\d{3})+(?!\d))/g,'.');
+const fmtK=v=>v>=1000?'R$ '+(v/1000).toFixed(0)+'k':fmt(v);
+const td=()=>new Date().toISOString().split('T')[0];
+const ld=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch{return d}};
+const sv=(k,v)=>localStorage.setItem(k,JSON.stringify(v));
+const SYS=`Você é a Lia, assessora financeira do Wagner, MEI. Responda SOMENTE JSON puro sem markdown: {"type":"transaction"|"query"|"chat","entry":{"kind":"income"|"expense","amount":0,"desc":"","category":"servico"|"produto"|"moradia"|"alimentacao"|"transporte"|"saude"|"telecom"|"outros","date":"YYYY-MM-DD"},"reply":"msg curta"}. income=recebeu/faturou. expense=gastei/paguei. query/chat=sem entry. Hoje:${td()}. Português br, respostas curtas.`;
+const IC={chat:"M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z",dash:"M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6",list:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4",plan:"M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z",send:"M12 19l9 2-9-18-9 18 9-2zm0 0v-8",plus:"M12 4v16m8-8H4",trash:"M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16",check:"M5 13l4 4L19 7"};
+const Ico=({n,sz=20,c='currentColor'})=>(<svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d={IC[n]}/></svg>);
+const NAV=[{id:'chat',l:'Lia IA',i:'chat'},{id:'dash',l:'Painel',i:'dash'},{id:'entries',l:'Lançamentos',i:'list'},{id:'plan',l:'Plano',i:'plan'}];
+const card={background:'#1E293B',borderRadius:14,padding:'14px',border:'0.5px solid rgba(255,255,255,0.06)',marginBottom:10};
+
+function App(){
+  const [tab,setTab]=useState('chat');
+  const [entries,setEntries]=useState(()=>ld('mx_e',[]));
+  const [msgs,setMsgs]=useState(()=>ld('mx_m',[{role:'assistant',text:'Oi Wagner! 👋 Sou a Lia.\n\nMe conta em linguagem natural:\n• "Recebi R$ 1.200 de serviço"\n• "Paguei R$ 80 de internet"\n• "Qual meu saldo?"\n\nRegistro tudo automaticamente.',type:'chat'}]));
+  const [ck,setCk]=useState(()=>ld('mx_c',CK_BASE.map(c=>({...c,feito:false}))));
+  const [loading,setLoading]=useState(false);
+  const [inp,setInp]=useState('');
+  const [showAdd,setShowAdd]=useState(false);
+  const btm=useRef(null),inpRef=useRef(null);
+  useEffect(()=>sv('mx_e',entries),[entries]);
+  useEffect(()=>sv('mx_m',msgs.slice(-50)),[msgs]);
+  useEffect(()=>sv('mx_c',ck),[ck]);
+  useEffect(()=>btm.current?.scrollIntoView({behavior:'smooth'}),[msgs,loading]);
+  const now=new Date(),mes=now.getMonth(),ano=now.getFullYear();
+  const doMes=k=>entries.filter(e=>{const d=new Date(e.date+'T12:00:00');return e.kind===k&&d.getMonth()===mes&&d.getFullYear()===ano}).reduce((s,e)=>s+e.amount,0);
+  const rM=doMes('income'),eM=doMes('expense'),sM=rM-eM;
+  const rA=entries.filter(e=>e.kind==='income'&&new Date(e.date+'T12:00:00').getFullYear()===ano).reduce((s,e)=>s+e.amount,0);
+  const lP=Math.min(100,(rA/LIMITE)*100);
+  async function send(text){
+    if(!text.trim()||loading)return;
+    setMsgs(m=>[...m,{role:'user',text:text.trim()}]);
+    setInp('');setLoading(true);
+    try{
+      const ctx=`Saldo:${fmt(sM)}|Receita:${fmt(rM)}|Despesas:${fmt(eM)}|Anual:${fmt(rA)}\nMsg:${text}`;
+      const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:400,system:SYS,messages:[{role:'user',content:ctx}]})});
+      const data=await res.json();
+      const raw=data.content?.[0]?.text||'{}';
+      let p;try{p=JSON.parse(raw.replace(/```json|```/g,'').trim())}catch{p={type:'chat',reply:raw}};
+      let ne=null;
+      if(p.type==='transaction'&&p.entry){ne={id:Date.now()+'',...p.entry,amount:Number(p.entry.amount)||0,date:p.entry.date||td()};setEntries(v=>[ne,...v])}
+      setMsgs(m=>[...m,{role:'assistant',text:p.reply||'Entendido!',type:p.type,entry:ne}]);
+    }catch{setMsgs(m=>[...m,{role:'assistant',text:'Erro de conexão. Tente novamente.',type:'chat'}])}
+    setLoading(false);inpRef.current?.focus();
+  }
+  const tgCk=i=>{const n=[...ck];n[i].feito=!n[i].feito;setCk(n)};
+  const delE=id=>setEntries(p=>p.filter(e=>e.id!==id));
+  const feitos=ck.filter(c=>c.feito).length,ckP=Math.round((feitos/ck.length)*100);
+  return(
+    <div style={{display:'flex',flexDirection:'column',height:'100dvh',background:'#0F172A',overflow:'hidden'}}>
+      <div style={{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}>
+        {tab==='chat'&&<ChatTab msgs={msgs} loading={loading} inp={inp} setInp={setInp} send={send} inpRef={inpRef} btm={btm} rM={rM} eM={eM} sM={sM}/>}
+        {tab==='dash'&&<DashTab rM={rM} eM={eM} sM={sM} rA={rA} lP={lP} entries={entries} mes={mes} ano={ano}/>}
+        {tab==='entries'&&<EntriesTab entries={entries} delE={delE} showAdd={showAdd} setShowAdd={setShowAdd} setEntries={setEntries}/>}
+        {tab==='plan'&&<PlanTab ck={ck} tgCk={tgCk} feitos={feitos} ckP={ckP}/>}
+      </div>
+      <nav style={{display:'flex',background:'#1E293B',borderTop:'0.5px solid rgba(255,255,255,0.08)',paddingBottom:'env(safe-area-inset-bottom,0px)'}}>
+        {NAV.map(n=>(
+          <button key={n.id} onClick={()=>setTab(n.id)} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',padding:'10px 0 8px',background:'none',border:'none',gap:3}}>
+            <Ico n={n.i} sz={22} c={tab===n.id?'#10B981':'#64748B'}/>
+            <span style={{fontSize:10,color:tab===n.id?'#10B981':'#64748B',fontWeight:tab===n.id?600:400}}>{n.l}</span>
+          </button>
+        ))}
+      </nav>
+    </div>
+  );
+}
+
+function ChatTab({msgs,loading,inp,setInp,send,inpRef,btm,rM,eM,sM}){
+  const SUGS=['Recebi R$ 800 hoje','Paguei R$ 120 de aluguel','Qual meu saldo?','Quanto faturei?'];
+  return(
+    <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+      <div style={{display:'flex',gap:8,padding:'12px 16px 0'}}>
+        {[{l:'Receita',v:rM,c:'#10B981'},{l:'Despesas',v:eM,c:'#F43F5E'},{l:'Saldo',v:sM,c:sM>=0?'#10B981':'#F43F5E'}].map(c=>(
+          <div key={c.l} style={{flex:1,background:'#1E293B',borderRadius:10,padding:'10px',border:'0.5px solid rgba(255,255,255,0.06)'}}>
+            <div style={{fontSize:10,color:'#64748B',marginBottom:3}}>{c.l}</div>
+            <div style={{fontSize:14,fontWeight:700,color:c.c}}>{fmtK(c.v)}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{flex:1,overflowY:'auto',padding:'12px 16px'}}>
+        {msgs.map((m,i)=>(
+          <div key={i} style={{display:'flex',flexDirection:m.role==='user'?'row-reverse':'row',gap:8,marginBottom:12,alignItems:'flex-end',animation:'fadeIn 0.2s ease'}}>
+            {m.role==='assistant'&&<div style={{width:28,height:28,borderRadius:'50%',background:'linear-gradient(135deg,#3B82F6,#10B981)',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontWeight:700,fontSize:12,flexShrink:0}}>L</div>}
+            <div style={{maxWidth:'78%'}}>
+              <div style={{padding:'10px 14px',borderRadius:m.role==='user'?'16px 16px 4px 16px':'16px 16px 16px 4px',fontSize:14,lineHeight:1.5,whiteSpace:'pre-wrap',background:m.role==='user'?'#3B82F6':'#1E293B',color:m.role==='user'?'#fff':'#F1F5F9',border:m.role==='assistant'?'0.5px solid rgba(255,255,255,0.06)':'none'}}>{m.text}</div>
+              {m.entry&&<div style={{marginTop:6,display:'flex',alignItems:'center',gap:8,padding:'8px 10px',borderRadius:8,background:m.entry.kind==='income'?'rgba(16,185,129,0.15)':'rgba(244,63,94,0.15)',border:`0.5px solid ${m.entry.kind==='income'?'#10B981':'#F43F5E'}`}}>
+                <span style={{fontSize:14}}>{m.entry.kind==='income'?'✅':'🔴'}</span>
+                <span style={{fontSize:13,flex:1}}>{m.entry.desc}</span>
+                <span style={{fontSize:13,fontWeight:700,color:m.entry.kind==='income'?'#10B981':'#F43F5E'}}>{m.entry.kind==='income'?'+':'-'}{fmtK(m.entry.amount)}</span>
+              </div>}
+            </div>
+          </div>
+        ))}
+        {loading&&<div style={{display:'flex',gap:8,alignItems:'flex-end'}}>
+          <div style={{width:28,height:28,borderRadius:'50%',background:'linear-gradient(135deg,#3B82F6,#10B981)',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontWeight:700,fontSize:12}}>L</div>
+          <div style={{padding:'12px 16px',borderRadius:'16px 16px 16px 4px',background:'#1E293B',border:'0.5px solid rgba(255,255,255,0.06)'}}>
+            <div style={{display:'flex',gap:4}}>{[0,1,2].map(j=><div key={j} style={{width:6,height:6,borderRadius:'50%',background:'#64748B',animation:`bounce 1.2s ${j*0.2}s infinite`}}/>)}</div>
+          </div>
+        </div>}
+        <div ref={btm} style={{height:8}}/>
+      </div>
+      <div style={{display:'flex',gap:6,padding:'8px 16px',overflowX:'auto'}}>
+        {SUGS.map(s=><button key={s} onClick={()=>send(s)} style={{flexShrink:0,fontSize:12,padding:'6px 12px',border:'0.5px solid rgba(255,255,255,0.12)',borderRadius:20,background:'rgba(255,255,255,0.05)',color:'#94A3B8'}}>{s}</button>)}
+      </div>
+      <div style={{display:'flex',gap:8,padding:'8px 16px 12px'}}>
+        <input ref={inpRef} value={inp} onChange={e=>setInp(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();send(inp)}}} placeholder="Recebi, paguei, qual meu saldo..." style={{flex:1,padding:'12px 14px',fontSize:15,border:'0.5px solid rgba(255,255,255,0.12)',borderRadius:12,background:'#1E293B',color:'#F1F5F9',outline:'none'}}/>
+        <button onClick={()=>send(inp)} disabled={loading||!inp.trim()} style={{width:44,height:44,borderRadius:12,background:loading||!inp.trim()?'#334155':'#3B82F6',border:'none',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+          <Ico n="send" sz={18} c="#fff"/>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function DashTab({rM,eM,sM,rA,lP,entries,mes,ano}){
+  const das=1518*0.05+5;
+  const catE=entries.filter(e=>{const d=new Date(e.date+'T12:00:00');return e.kind==='expense'&&d.getMonth()===mes&&d.getFullYear()===ano}).reduce((a,e)=>{a[e.category]=(a[e.category]||0)+e.amount;return a},{});
+  return(
+    <div style={{flex:1,overflowY:'auto',padding:'0 16px'}}>
+      <div style={{fontSize:20,fontWeight:700,padding:'20px 0 12px'}}>Painel Financeiro</div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
+        {[{l:'Receita do mês',v:rM,c:'#10B981',bg:'rgba(16,185,129,0.1)'},{l:'Despesas',v:eM,c:'#F43F5E',bg:'rgba(244,63,94,0.1)'}].map(c=>(
+          <div key={c.l} style={{background:c.bg,borderRadius:14,padding:'14px',border:'0.5px solid rgba(255,255,255,0.06)'}}>
+            <div style={{fontSize:11,color:'#94A3B8',marginBottom:6}}>{c.l}</div>
+            <div style={{fontSize:22,fontWeight:700,color:c.c}}>{fmtK(c.v)}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{background:sM>=0?'rgba(59,130,246,0.1)':'rgba(244,63,94,0.1)',borderRadius:14,padding:'14px',border:'0.5px solid rgba(255,255,255,0.06)',marginBottom:10}}>
+        <div style={{fontSize:11,color:'#94A3B8',marginBottom:4}}>Saldo líquido do mês</div>
+        <div style={{fontSize:28,fontWeight:700,color:sM>=0?'#3B82F6':'#F43F5E'}}>{fmt(sM)}</div>
+      </div>
+      <div style={card}>
+        <div style={{display:'flex',justifyContent:'space-between',marginBottom:8}}><span style={{fontSize:13,color:'#94A3B8'}}>Limite anual MEI</span><span style={{fontSize:13,fontWeight:600}}>{lP.toFixed(1)}%</span></div>
+        <div style={{background:'rgba(255,255,255,0.08)',borderRadius:4,height:8,overflow:'hidden'}}><div style={{height:8,borderRadius:4,width:lP+'%',background:lP>90?'#F43F5E':lP>70?'#F59E0B':'#10B981',transition:'width 0.4s'}}/></div>
+        <div style={{fontSize:11,color:'#64748B',marginTop:6}}>{fmt(rA)} de R$ 81.000</div>
+      </div>
+      <div style={card}>
+        <div style={{fontSize:13,fontWeight:600,marginBottom:12}}>Reservas — meta julho ✅</div>
+        {[{i:'🛡️',l:'Emergência',v:17000,c:'#3B82F6'},{i:'👶',l:'Bebê (dez)',v:5000,c:'#8B5CF6'}].map(r=>(
+          <div key={r.l} style={{marginBottom:12}}>
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:13,marginBottom:5}}><span style={{color:'#94A3B8'}}>{r.i} {r.l}</span><span style={{color:r.c,fontWeight:600}}>{fmt(r.v)} ✅</span></div>
+            <div style={{background:'rgba(255,255,255,0.08)',borderRadius:4,height:6}}><div style={{height:6,borderRadius:4,width:'100%',background:r.c}}/></div>
+          </div>
+        ))}
+      </div>
+      <div style={card}>
+        <div style={{fontSize:13,fontWeight:600,marginBottom:10}}>DAS estimado</div>
+        {[{l:'INSS (5% salário mínimo)',v:1518*0.05},{l:'ISS fixo (serviços)',v:5}].map(r=>(
+          <div key={r.l} style={{display:'flex',justifyContent:'space-between',fontSize:13,padding:'6px 0',borderTop:'0.5px solid rgba(255,255,255,0.06)'}}><span style={{color:'#64748B'}}>{r.l}</span><span>{fmt(r.v)}</span></div>
+        ))}
+        <div style={{display:'flex',justifyContent:'space-between',fontSize:15,fontWeight:700,padding:'10px 0 0',borderTop:'1px solid rgba(255,255,255,0.1)',marginTop:4}}><span>Total DAS</span><span style={{color:'#3B82F6'}}>{fmt(das)}</span></div>
+      </div>
+      {Object.keys(catE).length>0&&<div style={card}>
+        <div style={{fontSize:13,fontWeight:600,marginBottom:10}}>Despesas por categoria</div>
+        {Object.entries(catE).sort((a,b)=>b[1]-a[1]).map(([cat,val])=>{
+          const pct=eM>0?(val/eM)*100:0;
+          return <div key={cat} style={{marginBottom:10}}>
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:13,marginBottom:4}}><span style={{color:'#94A3B8',textTransform:'capitalize'}}>{cat}</span><span style={{fontWeight:600}}>{fmt(val)}</span></div>
+            <div style={{background:'rgba(255,255,255,0.08)',borderRadius:3,height:5}}><div style={{height:5,borderRadius:3,width:pct.toFixed(1)+'%',background:'#8B5CF6'}}/></div>
+          </div>;
+        })}
+      </div>}
+      <div style={{height:20}}/>
+    </div>
+  );
+}
+
+function EntriesTab({entries,delE,showAdd,setShowAdd,setEntries}){
+  const [form,setForm]=useState({kind:'income',desc:'',amount:'',category:'servico',date:td()});
+  const sorted=[...entries].sort((a,b)=>new Date(b.date)-new Date(a.date));
+  const CI=[{v:'servico',l:'Serviço'},{v:'produto',l:'Produto'},{v:'outros',l:'Outros'}];
+  const CE=[{v:'moradia',l:'Moradia'},{v:'alimentacao',l:'Alimentação'},{v:'transporte',l:'Transporte'},{v:'saude',l:'Saúde'},{v:'telecom',l:'Telecom'},{v:'outros',l:'Outros'}];
+  const add=()=>{if(!form.desc||!form.amount)return;setEntries(p=>[{id:Date.now()+'',...form,amount:parseFloat(form.amount)},...p]);setShowAdd(false);setForm({kind:'income',desc:'',amount:'',category:'servico',date:td()})};
+  const iS={width:'100%',padding:'10px 12px',fontSize:14,border:'0.5px solid rgba(255,255,255,0.12)',borderRadius:8,background:'rgba(255,255,255,0.05)',color:'#F1F5F9',outline:'none'};
+  return(
+    <div style={{flex:1,overflowY:'auto',padding:'0 16px'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'20px 0 12px'}}>
+        <div style={{fontSize:20,fontWeight:700}}>Lançamentos</div>
+        <button onClick={()=>setShowAdd(!showAdd)} style={{width:36,height:36,borderRadius:10,background:'#10B981',border:'none',display:'flex',alignItems:'center',justifyContent:'center'}}><Ico n="plus" sz={16} c="#fff"/></button>
+      </div>
+      {showAdd&&<div style={{...card,marginBottom:10}}>
+        <div style={{fontSize:13,fontWeight:600,marginBottom:12}}>Novo lançamento</div>
+        <div style={{display:'flex',gap:6,marginBottom:12}}>
+          {[['income','📈 Receita'],['expense','📉 Despesa']].map(([k,l])=>(
+            <button key={k} onClick={()=>setForm(f=>({...f,kind:k,category:k==='income'?'servico':'moradia'}))} style={{flex:1,padding:'8px',borderRadius:8,border:'none',background:form.kind===k?(k==='income'?'rgba(16,185,129,0.2)':'rgba(244,63,94,0.2)'):'rgba(255,255,255,0.06)',color:form.kind===k?(k==='income'?'#10B981':'#F43F5E'):'#94A3B8',fontSize:13,fontWeight:600}}>{l}</button>
+          ))}
+        </div>
+        {[{f:'desc',l:'Descrição',t:'text',p:'Ex: Serviço de design'},{f:'amount',l:'Valor (R$)',t:'number',p:'0,00'}].map(f=>(
+          <div key={f.f} style={{marginBottom:10}}><div style={{fontSize:11,color:'#64748B',marginBottom:4}}>{f.l}</div><input type={f.t} value={form[f.f]} onChange={e=>setForm(p=>({...p,[f.f]:e.target.value}))} placeholder={f.p} style={iS}/></div>
+        ))}
+        <div style={{marginBottom:10}}><div style={{fontSize:11,color:'#64748B',marginBottom:4}}>Categoria</div><select value={form.category} onChange={e=>setForm(p=>({...p,category:e.target.value}))} style={iS}>{(form.kind==='income'?CI:CE).map(c=><option key={c.v} value={c.v}>{c.l}</option>)}</select></div>
+        <div style={{marginBottom:12}}><div style={{fontSize:11,color:'#64748B',marginBottom:4}}>Data</div><input type="date" value={form.date} onChange={e=>setForm(p=>({...p,date:e.target.value}))} style={iS}/></div>
+        <button onClick={add} style={{width:'100%',padding:'12px',background:'#10B981',border:'none',borderRadius:10,color:'#fff',fontSize:15,fontWeight:600}}>Salvar</button>
+      </div>}
+      {sorted.length===0?<div style={{textAlign:'center',padding:'60px 20px',color:'#64748B'}}><div style={{fontSize:40,marginBottom:12}}>💬</div><div style={{fontSize:15}}>Nenhum lançamento ainda</div><div style={{fontSize:13,marginTop:6}}>Use o chat com a Lia ou o botão +</div></div>
+      :sorted.map(e=>(
+        <div key={e.id} style={{display:'flex',alignItems:'center',gap:12,padding:'12px 0',borderBottom:'0.5px solid rgba(255,255,255,0.06)'}}>
+          <div style={{width:38,height:38,borderRadius:10,background:e.kind==='income'?'rgba(16,185,129,0.15)':'rgba(244,63,94,0.15)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0}}>{e.kind==='income'?'📈':'📉'}</div>
+          <div style={{flex:1,minWidth:0}}><div style={{fontSize:14,fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{e.desc}</div><div style={{fontSize:11,color:'#64748B',marginTop:2}}>{e.category} · {new Date(e.date+'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'short'})}</div></div>
+          <div style={{fontSize:15,fontWeight:700,color:e.kind==='income'?'#10B981':'#F43F5E',whiteSpace:'nowrap'}}>{e.kind==='income'?'+':'-'}{fmtK(e.amount)}</div>
+          <button onClick={()=>delE(e.id)} style={{background:'none',border:'none',padding:6,borderRadius:6,display:'flex'}}><Ico n="trash" sz={16} c="#64748B"/></button>
+        </div>
+      ))}
+      <div style={{height:20}}/>
+    </div>
+  );
+}
+
+function PlanTab({ck,tgCk,feitos,ckP}){
+  return(
+    <div style={{flex:1,overflowY:'auto',padding:'0 16px'}}>
+      <div style={{fontSize:20,fontWeight:700,padding:'20px 0 12px'}}>Plano Jul–Dez/26</div>
+      <div style={card}>
+        <div style={{display:'flex',justifyContent:'space-between',marginBottom:10}}><div style={{fontSize:13,fontWeight:600}}>✅ Checklist de julho</div><div style={{fontSize:13,color:'#10B981',fontWeight:600}}>{feitos}/{ck.length}</div></div>
+        <div style={{background:'rgba(255,255,255,0.08)',borderRadius:4,height:6,marginBottom:14,overflow:'hidden'}}><div style={{height:6,borderRadius:4,width:ckP+'%',background:ckP===100?'#10B981':'#3B82F6',transition:'width 0.4s'}}/></div>
+        {ck.map((c,i)=>(
+          <div key={i} onClick={()=>tgCk(i)} style={{display:'flex',gap:12,padding:'10px 0',borderTop:i>0?'0.5px solid rgba(255,255,255,0.06)':'none',cursor:'pointer',alignItems:'flex-start'}}>
+            <div style={{width:22,height:22,borderRadius:'50%',border:c.feito?'none':'1.5px solid #334155',background:c.feito?'#10B981':'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,marginTop:1}}>
+              {c.feito&&<Ico n="check" sz={12} c="#fff"/>}
+            </div>
+            <div><div style={{fontSize:13,fontWeight:500,color:c.feito?'#64748B':'#F1F5F9',textDecoration:c.feito?'line-through':'none'}}>{c.a}</div><div style={{fontSize:11,color:c.feito?'#10B981':'#64748B',marginTop:2}}>{c.i}</div></div>
+          </div>
+        ))}
+        {ckP===100&&<div style={{marginTop:12,background:'rgba(16,185,129,0.15)',borderRadius:8,padding:'10px',textAlign:'center',fontSize:14,fontWeight:600,color:'#10B981'}}>🎉 Julho executado!</div>}
+      </div>
+      <div style={card}>
+        <div style={{fontSize:13,fontWeight:600,marginBottom:14}}>Saldo livre por mês</div>
+        {MESES_P.map((m,i)=>{const max=Math.max(...SALDOS),pct=(SALDOS[i]/max)*100;return(
+          <div key={i} style={{marginBottom:12}}>
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:13,marginBottom:4}}>
+              <span style={{color:'#94A3B8',display:'flex',gap:6,alignItems:'center'}}>{m}{i===5&&<span style={{fontSize:10,background:'rgba(139,92,246,0.2)',color:'#8B5CF6',padding:'1px 6px',borderRadius:20}}>👶</span>}{i===5&&<span style={{fontSize:10,background:'rgba(16,185,129,0.2)',color:'#10B981',padding:'1px 6px',borderRadius:20}}>zero cartão</span>}</span>
+              <span style={{fontWeight:600,color:SALDOS[i]>4000?'#10B981':'#F59E0B'}}>{fmt(SALDOS[i])}</span>
+            </div>
+            <div style={{background:'rgba(255,255,255,0.08)',borderRadius:4,height:6}}><div style={{height:6,borderRadius:4,width:pct.toFixed(1)+'%',background:i===0?'#3B82F6':'#10B981'}}/></div>
+          </div>
+        )})}
+      </div>
+      <div style={card}>
+        <div style={{fontSize:13,fontWeight:600,marginBottom:12}}>Dívidas em dez/26</div>
+        {[{l:'Moto (R$ 44k)',s:'✅ Eliminada em julho',c:'#10B981'},{l:'MEI (R$ 4k)',s:'✅ Quitado em julho',c:'#10B981'},{l:'Cartão Militão',s:'⏳ Encerra out/26',c:'#F59E0B'},{l:'Cartão Roger',s:'⏳ Encerra nov/26',c:'#F59E0B'},{l:'Cartão Ebó',s:'⏳ Encerra out/26',c:'#F59E0B'}].map((d,i)=>(
+          <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:13,padding:'7px 0',borderTop:i>0?'0.5px solid rgba(255,255,255,0.06)':'none'}}>
+            <span style={{color:'#94A3B8'}}>{d.l}</span><span style={{color:d.c,fontWeight:500,fontSize:12}}>{d.s}</span>
+          </div>
+        ))}
+        <div style={{marginTop:12,background:'rgba(16,185,129,0.12)',borderRadius:8,padding:'10px',textAlign:'center',fontSize:13,fontWeight:600,color:'#10B981'}}>Dezembro: zero dívidas + R$ 22k em reservas 🎉</div>
+      </div>
+      <div style={{background:'rgba(245,158,11,0.08)',borderRadius:14,padding:'14px',border:'0.5px solid rgba(245,158,11,0.2)',marginBottom:10}}>
+        <div style={{fontSize:13,fontWeight:600,marginBottom:10,color:'#F59E0B'}}>🎯 Lazer com a Marcela</div>
+        {[{m:'Julho',v:'R$ 0',o:'Mês de execução'},{m:'Agosto',v:'R$ 900',o:'Cartão ainda pesado'},{m:'Set–Nov',v:'R$ 1.200',o:'Saldo maior'},{m:'Dezembro',v:'R$ 1.500+',o:'Zero cartão — comemora 🎉'}].map((r,i)=>(
+          <div key={i} style={{display:'flex',justifyContent:'space-between',fontSize:13,padding:'6px 0',borderTop:i>0?'0.5px solid rgba(245,158,11,0.15)':'none'}}>
+            <span style={{color:'#94A3B8'}}>{r.m} <span style={{fontSize:11,color:'#64748B'}}>· {r.o}</span></span>
+            <span style={{fontWeight:600,color:'#F59E0B'}}>{r.v}</span>
+          </div>
+        ))}
+      </div>
+      <div style={{height:20}}/>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>

@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+  <meta name="theme-color" content="#0F172A"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="MEI Assessor"/>
+  <title>MEI Assessor</title>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+    html,body,#root{height:100%;background:#0F172A;color:#F1F5F9;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','Helvetica Neue',sans-serif;-webkit-font-smoothing:antialiased;overflow:hidden}
+    button,input,select{font-family:inherit}
+    ::-webkit-scrollbar{display:none}
+    @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    canvas{max-width:100%}
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+firebase.initializeApp({
+  apiKey:"AIzaSyDjREkBhxlwUJb4-TEo1nS7Xt_sS6HNJZ8",
+  authDomain:"mei-acessor.firebaseapp.com",
+  projectId:"mei-acessor",
+  storageBucket:"mei-acessor.firebasestorage.app",
+  messagingSenderId:"1029585206007",
+  appId:"1:1029585206007:web:2b79a241c16fd3014071f2"
+});
+const auth=firebase.auth();
+const db=firebase.firestore();
+</script>
+<script type="text/babel">
+const {useState,useEffect,useRef,useCallback}=React;
+
+const fmt=v=>'R$ '+Math.abs(Number(v)).toFixed(2).replace('.',',').replace(/\B(?=(\d{3})+(?!\d))/g,'.');
+const fmtK=v=>v>=1000?'R$ '+(v/1000).toFixed(0)+'k':fmt(v);
+const td=()=>new Date().toISOString().split('T')[0];
+
+const FORMAS_PAG=['PIX','Dinheiro','Cartão de débito','Cartão de crédito','Transferência','Boleto'];
+const CAT_INC=[{v:'servico',l:'Serviço'},{v:'produto',l:'Produto'},{v:'outros',l:'Outros'}];
+const CAT_EXP=[{v:'moradia',l:'Moradia'},{v:'alimentacao',l:'Alimentação'},{v:'transporte',l:'Transporte'},{v:'saude',l:'Saúde'},{v:'telecom',l:'Telecom'},{v:'marketing',l:'Marketing'},{v:'equipamento',l:'Equipamento'},{v:'outros',l:'Outros'}];
+const LIMITE_MEI=81000;
+const MESES_NOME=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+const MESES_PLANO=['Jul','Ago','Set','Out','Nov','Dez'];
+const SALDOS_PLANO=[27288,4402,5364,5612,5732,6104];
+
+const WAGNER_FIXAS=[
+  {nome:'Aluguel',valor:1900,cat:'Moradia'},{nome:'Condomínio',valor:416,cat:'Moradia'},{nome:'Luz (julho)',valor:690,cat:'Moradia'},
+  {nome:'Pensão',valor:570,cat:'Família'},{nome:'Wellhub Marcela',valor:200,cat:'Saúde'},
+  {nome:'Wellhub Wagner',valor:140,cat:'Saúde'},{nome:'Plano de saúde Marcela',valor:550,cat:'Saúde'},
+  {nome:'Claro Marcela',valor:180,cat:'Telecom'},{nome:'Claro Wagner',valor:60,cat:'Telecom'},
+  {nome:'Tim Wagner',valor:80,cat:'Telecom'},{nome:'Compras do mês',valor:1000,cat:'Alimentação'},
+];
+const WAGNER_CARTOES=[
+  {nome:'Militão P1',meses:[6,7,8,9],valor:119.98},{nome:'Militão P2',meses:[6,7],valor:351.21},
+  {nome:'Roger C1',meses:[6],valor:376},{nome:'Roger P2',meses:[6,7,8],valor:248},
+  {nome:'Roger C3',meses:[6,7,8,9,10],valor:286},{nome:'Roger P3',meses:[6,7,8,9,10],valor:86},
+  {nome:'Roger C4',meses:[6],valor:572},{nome:'Ebó 4x',meses:[7,8,9,10],valor:611},
+  {nome:'Cartão XP (renegociação)',meses:[7,8,9,10,11,12],valor:260.72},
+];
+const WAGNER_JULHO_PAGO=[
+  {nome:'Quitação da moto (Banco Pan)',valor:9353.61,data:'03/07'},
+  {nome:'Fatura Nubank (extra)',valor:100.00,data:'03/07'},
+  {nome:'Luz (referente a junho, atrasada)',valor:588.00,data:'03/07'},
+  {nome:'Internet (junho + julho)',valor:200.00,data:'03/07'},
+  {nome:'Cartão XP - entrada renegociação',valor:303.69,data:'08/07'},
+];
+const WAGNER_CK=[
+  {a:'Quitar moto (Banco Pan - R$ 9.353,61)',i:'Elimina R$ 44k de dívida — FEITO',feito:true},
+  {a:'Receber R$ 22k do comprador',i:'Lucro líquido de R$ 12.646,39',feito:false},
+  {a:'Transferir R$ 17.000 → emergência',i:'Reserva de 3 meses completa',feito:false},
+  {a:'Transferir R$ 5.000 → bebê',i:'Chegada da filha garantida',feito:false},
+  {a:'Quitar MEI no gov.br/regularize',i:'Zero dívida com a Receita',feito:false},
+  {a:'Abrir conta separada (Nubank/Inter)',i:'Dinheiro que rende e não mistura',feito:false},
+];
+
+const IC={
+  dash:"M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6",
+  chart:"M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z",
+  list:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4",
+  plan:"M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z",
+  plus:"M12 4v16m8-8H4",
+  trash:"M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16",
+  check:"M5 13l4 4L19 7",
+  logout:"M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1",
+};
+const Ico=({n,sz=20,c='currentColor'})=>(
+  <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d={IC[n]}/></svg>
+);
+const NAV=[{id:'dash',l:'Painel',i:'dash'},{id:'julho',l:'Julho Real',i:'plan'},{id:'fixas',l:'Fixas',i:'list'},{id:'graficos',l:'Gráficos',i:'chart'},{id:'entries',l:'Lançamentos',i:'list'},{id:'plan',l:'Plano',i:'plan'}];
+const card={background:'#1E293B',borderRadius:14,padding:'14px',border:'0.5px solid rgba(255,255,255,0.06)',marginBottom:10};
+const iS={width:'100%',padding:'10px 12px',fontSize:14,border:'0.5px solid rgba(255,255,255,0.12)',borderRadius:8,background:'rgba(255,255,255,0.05)',color:'#F1F5F9',outline:'none'};
+
+// ── Chart Hook ───────────────────────────────────────────────────────
+function useChart(ref, type, data, options){
+  useEffect(()=>{
+    if(!ref.current)return;
+    const ctx=ref.current.getContext('2d');
+    const chart=new Chart(ctx,{type,data,options});
+    return()=>chart.destroy();
+  },[JSON.stringify(data)]);
+}
+
+// ── Login ────────────────────────────────────────────────────────────
+function LoginScreen(){
+  const [loading,setLoading]=useState(false);
+  const [err,setErr]=useState('');
+  const login=async()=>{
+    setLoading(true);setErr('');
+    try{await auth.signInWithPopup(new firebase.auth.GoogleAuthProvider())}
+    catch{setErr('Erro ao entrar. Tente novamente.');setLoading(false);}
+  };
+  return(
+    <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'100dvh',padding:32,background:'#0F172A'}}>
+      <div style={{width:72,height:72,borderRadius:20,background:'linear-gradient(135deg,#3B82F6,#10B981)',display:'flex',alignItems:'center',justifyContent:'center',marginBottom:24,fontSize:36}}>💰</div>
+      <div style={{fontSize:26,fontWeight:700,marginBottom:8}}>MEI Assessor</div>
+      <div style={{fontSize:14,color:'#64748B',marginBottom:40,textAlign:'center',lineHeight:1.6}}>Gestão financeira MEI{'\n'}com gráficos e Firebase</div>
+      <button onClick={login} disabled={loading} style={{width:'100%',maxWidth:320,padding:'14px',background:'#fff',border:'none',borderRadius:12,fontSize:15,fontWeight:600,color:'#1a1a1a',display:'flex',alignItems:'center',justifyContent:'center',gap:10,cursor:'pointer',opacity:loading?0.7:1}}>
+        <svg width="20" height="20" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+        {loading?'Entrando...':'Entrar com Google'}
+      </button>
+      {err&&<div style={{marginTop:16,color:'#F43F5E',fontSize:13}}>{err}</div>}
+    </div>
+  );
+}
+
+function Loader(){
+  return(
+    <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100dvh',background:'#0F172A'}}>
+      <div style={{width:32,height:32,borderRadius:'50%',border:'3px solid rgba(255,255,255,0.1)',borderTop:'3px solid #10B981',animation:'spin 0.8s linear infinite'}}/>
+    </div>
+  );
+}
+
+// ── App ──────────────────────────────────────────────────────────────
+function App(){
+  const [user,setUser]=useState(undefined);
+  const [tab,setTab]=useState('dash');
+  const [entries,setEntries]=useState([]);
+  const [checklist,setChecklist]=useState([]);
+  const [fixas,setFixas]=useState([]);
+  const [loadingData,setLoadingData]=useState(true);
+  const [isWagner,setIsWagner]=useState(false);
+
+  useEffect(()=>auth.onAuthStateChanged(u=>{
+    setUser(u??null);
+    if(u){
+      if(!localStorage.getItem('mei_owner'))localStorage.setItem('mei_owner',u.uid);
+      setIsWagner(u.uid===localStorage.getItem('mei_owner'));
+    }
+  }),[]);
+
+  useEffect(()=>{
+    if(!user)return;
+    setLoadingData(true);
+    const uid=user.uid;
+    const owner=uid===localStorage.getItem('mei_owner');
+    setIsWagner(owner);
+    const unsub=db.collection('users').doc(uid).collection('entries')
+      .orderBy('createdAt','desc').onSnapshot(snap=>{
+        setEntries(snap.docs.map(d=>({id:d.id,...d.data()})));
+        setLoadingData(false);
+      },()=>setLoadingData(false));
+    db.collection('users').doc(uid).collection('meta').doc('checklist').get().then(doc=>{
+      if(doc.exists)setChecklist(doc.data().items||[]);
+      else if(owner){setChecklist(WAGNER_CK);db.collection('users').doc(uid).collection('meta').doc('checklist').set({items:WAGNER_CK});}
+      else setChecklist([]);
+    });
+    db.collection('users').doc(uid).collection('meta').doc('fixas').get().then(doc=>{
+      if(doc.exists)setFixas(doc.data().items||[]);
+      else if(owner){setFixas(WAGNER_FIXAS);db.collection('users').doc(uid).collection('meta').doc('fixas').set({items:WAGNER_FIXAS});}
+      else setFixas([]);
+    });
+    return()=>unsub();
+  },[user]);
+
+  const addEntry=async e=>{if(!user)return;await db.collection('users').doc(user.uid).collection('entries').add({...e,createdAt:firebase.firestore.FieldValue.serverTimestamp()})};
+  const delEntry=async id=>{if(!user)return;await db.collection('users').doc(user.uid).collection('entries').doc(id).delete()};
+  const updateEntry=async(id,data)=>{if(!user)return;await db.collection('users').doc(user.uid).collection('entries').doc(id).update(data)};
+  const saveCk=async ck=>{setChecklist(ck);if(user)await db.collection('users').doc(user.uid).collection('meta').doc('checklist').set({items:ck})};
+  const saveFixas=async fx=>{setFixas(fx);if(user)await db.collection('users').doc(user.uid).collection('meta').doc('fixas').set({items:fx})};
+
+  if(user===undefined)return <Loader/>;
+  if(user===null)return <LoginScreen/>;
+  if(loadingData)return <Loader/>;
+
+  const now=new Date(),mes=now.getMonth(),ano=now.getFullYear();
+  const filterMes=(k,m,a)=>entries.filter(e=>{const d=new Date((e.date||td())+'T12:00:00');return e.kind===k&&d.getMonth()===m&&d.getFullYear()===a});
+  const sumMes=(k,m,a)=>filterMes(k,m,a).reduce((s,e)=>s+(e.amount||0),0);
+  const rM=sumMes('income',mes,ano),eM=sumMes('expense',mes,ano),sM=rM-eM;
+  const rA=entries.filter(e=>e.kind==='income'&&new Date((e.date||td())+'T12:00:00').getFullYear()===ano).reduce((s,e)=>s+(e.amount||0),0);
+  const lP=Math.min(100,(rA/LIMITE_MEI)*100);
+  const feitos=checklist.filter(c=>c.feito).length;
+  const ckP=checklist.length>0?Math.round((feitos/checklist.length)*100):0;
+  const fixasMes=fixas.reduce((s,f)=>s+f.valor,0);
+  const cartoesMes=isWagner?WAGNER_CARTOES.filter(c=>c.meses.includes(mes)).reduce((s,c)=>s+c.valor,0):0;
+
+  return(
+    <div style={{display:'flex',flexDirection:'column',height:'100dvh',background:'#0F172A',overflow:'hidden'}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 16px',paddingTop:'calc(12px + env(safe-area-inset-top,0px))',background:'#1E293B',borderBottom:'0.5px solid rgba(255,255,255,0.06)'}}>
+        <div style={{display:'flex',alignItems:'center',gap:8}}>
+          <div style={{width:30,height:30,borderRadius:8,background:'linear-gradient(135deg,#3B82F6,#10B981)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16}}>💰</div>
+          <div><div style={{fontSize:14,fontWeight:600}}>MEI Assessor</div><div style={{fontSize:11,color:'#64748B'}}>{user.displayName?.split(' ')[0]||'Usuário'}</div></div>
+        </div>
+        <button onClick={()=>auth.signOut()} style={{background:'none',border:'none',padding:6,borderRadius:8,display:'flex',color:'#64748B'}}>
+          <Ico n="logout" sz={18} c="#64748B"/>
+        </button>
+      </div>
+      <div style={{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}>
+        {tab==='dash'&&<DashTab rM={rM} eM={eM} sM={sM} rA={rA} lP={lP} isWagner={isWagner} fixasMes={fixasMes} cartoesMes={cartoesMes}/>}
+        {tab==='julho'&&<JulhoRealTab isWagner={isWagner}/>}
+        {tab==='fixas'&&<FixasTab fixas={fixas} saveFixas={saveFixas} isWagner={isWagner}/>}
+        {tab==='graficos'&&<GraficosTab entries={entries} mes={mes} ano={ano} sumMes={sumMes} isWagner={isWagner}/>}
+        {tab==='entries'&&<EntriesTab entries={entries} addEntry={addEntry} delEntry={delEntry} updateEntry={updateEntry}/>}
+        {tab==='plan'&&<PlanTab checklist={checklist} saveCk={saveCk} feitos={feitos} ckP={ckP} isWagner={isWagner}/>}
+      </div>
+      <nav style={{display:'flex',background:'#1E293B',borderTop:'0.5px solid rgba(255,255,255,0.08)',paddingBottom:'env(safe-area-inset-bottom,0px)'}}>
+        {NAV.map(n=>(
+          <button key={n.id} onClick={()=>setTab(n.id)} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',padding:'10px 0 8px',background:'none',border:'none',gap:3}}>
+            <Ico n={n.i} sz={21} c={tab===n.id?'#10B981':'#64748B'}/>
+            <span style={{fontSize:9,color:tab===n.id?'#10B981':'#64748B',fontWeight:tab===n.id?600:400}}>{n.l}</span>
+          </button>
+        ))}
+      </nav>
+    </div>
+  );
+}
+
+// ── Julho Real ───────────────────────────────────────────────────────
+function JulhoRealTab({isWagner}){
+  const [pagos,setPagos]=useState(()=>{
+    try{return JSON.parse(localStorage.getItem('julho_pagos'))||{}}catch{return{}}
+  });
+
+  const toggle=(id)=>{
+    const n={...pagos,[id]:!pagos[id]};
+    setPagos(n);
+    localStorage.setItem('julho_pagos',JSON.stringify(n));
+  };
+
+  if(!isWagner){
+    return(
+      <div style={{flex:1,overflowY:'auto',padding:'0 16px'}}>
+        <div style={{fontSize:18,fontWeight:700,padding:'16px 0 12px'}}>Julho Real</div>
+        <div style={{...card,textAlign:'center',padding:'40px 20px',color:'#64748B'}}>
+          <div style={{fontSize:36,marginBottom:12}}>📋</div>
+          <div style={{fontSize:14}}>Esta seção é exclusiva do plano do Wagner.</div>
+        </div>
+        <div style={{height:20}}/>
+      </div>
+    );
+  }
+
+  const totalJaPago=WAGNER_JULHO_PAGO.reduce((s,i)=>s+i.valor,0);
+
+  // Falta pagar: fixas + cartões de julho (mês 6 = índice do array de meses, julho=6)
+  const fixasFaltam=WAGNER_FIXAS; // todas ainda não pagas
+  const totalFixasFaltam=fixasFaltam.reduce((s,f)=>s+f.valor,0);
+
+  const cartoesJulho=WAGNER_CARTOES.filter(c=>c.meses.includes(6));
+  const totalCartoesJulho=cartoesJulho.reduce((s,c)=>s+c.valor,0);
+  const direitoEbo=1500;
+
+  const totalFaltaPagar=totalFixasFaltam+totalCartoesJulho+direitoEbo;
+
+  // Quanto já foi marcado como pago dentre "falta pagar"
+  const marcadosPagos=[...fixasFaltam.map((f,i)=>({id:'fixa-'+i,valor:f.valor})),
+    ...cartoesJulho.map((c,i)=>({id:'cartao-'+i,valor:c.valor})),
+    {id:'ebo-direito',valor:direitoEbo}]
+    .filter(item=>pagos[item.id]).reduce((s,i)=>s+i.valor,0);
+
+  const faturamento=27500;
+  const vendaMoto=22000;
+  const caixaAtual=faturamento-totalJaPago;
+  const reservaEmerg=17000,reservaBebe=5000;
+  const saldoLivre=(caixaAtual+vendaMoto)-(totalFaltaPagar-marcadosPagos)-reservaEmerg-reservaBebe;
+
+  return(
+    <div style={{flex:1,overflowY:'auto',padding:'0 16px'}}>
+      <div style={{fontSize:18,fontWeight:700,padding:'16px 0 12px'}}>Julho Real — Situação Atual</div>
+
+      {/* Caixa real */}
+      <div style={{...card,background:'rgba(59,130,246,0.1)'}}>
+        <div style={{fontSize:13,fontWeight:600,marginBottom:10}}>💵 Caixa real agora</div>
+        <div style={{display:'flex',justifyContent:'space-between',fontSize:14,padding:'5px 0'}}>
+          <span style={{color:'#94A3B8'}}>Faturamento recebido</span>
+          <span style={{color:'#10B981',fontWeight:600}}>{fmt(faturamento)}</span>
+        </div>
+        <div style={{display:'flex',justifyContent:'space-between',fontSize:14,padding:'5px 0',borderTop:'0.5px solid rgba(255,255,255,0.06)'}}>
+          <span style={{color:'#94A3B8'}}>(−) Já pago</span>
+          <span style={{color:'#F43F5E',fontWeight:600}}>{fmt(totalJaPago)}</span>
+        </div>
+        <div style={{display:'flex',justifyContent:'space-between',fontSize:16,fontWeight:700,padding:'8px 0 0',borderTop:'1px solid rgba(255,255,255,0.15)',marginTop:4}}>
+          <span>Caixa disponível</span>
+          <span style={{color:'#3B82F6'}}>{fmt(caixaAtual)}</span>
+        </div>
+      </div>
+
+      {/* Já pago detalhado */}
+      <div style={card}>
+        <div style={{fontSize:13,fontWeight:600,marginBottom:10}}>✅ Já pago em julho</div>
+        {WAGNER_JULHO_PAGO.map((item,i)=>(
+          <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:13,padding:'8px 0',borderTop:i>0?'0.5px solid rgba(255,255,255,0.06)':'none'}}>
+            <div>
+              <div style={{color:'#F1F5F9'}}>{item.nome}</div>
+              <div style={{fontSize:11,color:'#64748B'}}>{item.data}</div>
+            </div>
+            <span style={{color:'#10B981',fontWeight:600}}>{fmt(item.valor)}</span>
+          </div>
+        ))}
+        <div style={{marginTop:10,paddingTop:10,borderTop:'1px solid rgba(255,255,255,0.1)',display:'flex',justifyContent:'space-between',fontSize:14,fontWeight:700}}>
+          <span>Total pago</span><span style={{color:'#10B981'}}>{fmt(totalJaPago)}</span>
+        </div>
+      </div>
+
+      {/* Falta pagar - fixas */}
+      <div style={card}>
+        <div style={{fontSize:13,fontWeight:600,marginBottom:10}}>⏳ Despesas fixas — falta pagar</div>
+        {fixasFaltam.map((f,i)=>{
+          const id='fixa-'+i;
+          const done=!!pagos[id];
+          return(
+            <div key={id} onClick={()=>toggle(id)} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 0',borderTop:i>0?'0.5px solid rgba(255,255,255,0.06)':'none',cursor:'pointer'}}>
+              <div style={{width:20,height:20,borderRadius:6,border:done?'none':'1.5px solid #334155',background:done?'#10B981':'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                {done&&<Ico n="check" sz={12} c="#fff"/>}
+              </div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:13,color:done?'#64748B':'#F1F5F9',textDecoration:done?'line-through':'none'}}>{f.nome}</div>
+                <div style={{fontSize:11,color:'#64748B'}}>{f.cat}</div>
+              </div>
+              <span style={{fontSize:13,fontWeight:600,color:done?'#64748B':'#F43F5E'}}>{fmt(f.valor)}</span>
+            </div>
+          );
+        })}
+        <div style={{marginTop:10,paddingTop:10,borderTop:'1px solid rgba(255,255,255,0.1)',display:'flex',justifyContent:'space-between',fontSize:14,fontWeight:700}}>
+          <span>Total fixas</span><span style={{color:'#F43F5E'}}>{fmt(totalFixasFaltam)}</span>
+        </div>
+      </div>
+
+      {/* Falta pagar - cartões */}
+      <div style={card}>
+        <div style={{fontSize:13,fontWeight:600,marginBottom:10}}>⏳ Cartões — falta pagar em julho</div>
+        {cartoesJulho.map((c,i)=>{
+          const id='cartao-'+i;
+          const done=!!pagos[id];
+          return(
+            <div key={id} onClick={()=>toggle(id)} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 0',borderTop:i>0?'0.5px solid rgba(255,255,255,0.06)':'none',cursor:'pointer'}}>
+              <div style={{width:20,height:20,borderRadius:6,border:done?'none':'1.5px solid #334155',background:done?'#10B981':'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                {done&&<Ico n="check" sz={12} c="#fff"/>}
+              </div>
+              <div style={{flex:1,fontSize:13,color:done?'#64748B':'#F1F5F9',textDecoration:done?'line-through':'none'}}>{c.nome}</div>
+              <span style={{fontSize:13,fontWeight:600,color:done?'#64748B':'#F43F5E'}}>{fmt(c.valor)}</span>
+            </div>
+          );
+        })}
+        <div onClick={()=>toggle('ebo-direito')} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 0',borderTop:'0.5px solid rgba(255,255,255,0.06)',cursor:'pointer'}}>
+          <div style={{width:20,height:20,borderRadius:6,border:pagos['ebo-direito']?'none':'1.5px solid #334155',background:pagos['ebo-direito']?'#10B981':'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+            {pagos['ebo-direito']&&<Ico n="check" sz={12} c="#fff"/>}
+          </div>
+          <div style={{flex:1,fontSize:13,color:pagos['ebo-direito']?'#64748B':'#F1F5F9',textDecoration:pagos['ebo-direito']?'line-through':'none'}}>Direito Ebó</div>
+          <span style={{fontSize:13,fontWeight:600,color:pagos['ebo-direito']?'#64748B':'#F43F5E'}}>{fmt(direitoEbo)}</span>
+        </div>
+        <div style={{marginTop:10,paddingTop:10,borderTop:'1px solid rgba(255,255,255,0.1)',display:'flex',justifyContent:'space-between',fontSize:14,fontWeight:700}}>
+          <span>Total cartões + Ebó</span><span style={{color:'#F43F5E'}}>{fmt(totalCartoesJulho+direitoEbo)}</span>
+        </div>
+      </div>
+
+      {/* Ainda vai entrar */}
+      <div style={{...card,background:'rgba(16,185,129,0.08)'}}>
+        <div style={{fontSize:13,fontWeight:600,marginBottom:8}}>🔮 Ainda vai entrar</div>
+        <div style={{display:'flex',justifyContent:'space-between',fontSize:14}}>
+          <span style={{color:'#94A3B8'}}>Venda da moto</span>
+          <span style={{color:'#10B981',fontWeight:700}}>{fmt(vendaMoto)}</span>
+        </div>
+      </div>
+
+      {/* Saldo final projetado */}
+      <div style={{...card,background:'rgba(139,92,246,0.1)'}}>
+        <div style={{fontSize:13,fontWeight:600,marginBottom:10}}>📊 Projeção — saldo livre de julho</div>
+        <div style={{fontSize:11,color:'#64748B',marginBottom:8}}>Considerando reservas de R$ 17k (emergência) + R$ 5k (bebê) já formadas</div>
+        <div style={{fontSize:26,fontWeight:700,color:'#8B5CF6'}}>{fmt(saldoLivre)}</div>
+      </div>
+
+      <div style={{height:20}}/>
+    </div>
+  );
+}
+
+// ── Fixas (editável) ────────────────────────────────────────────────
+function FixasTab({fixas,saveFixas,isWagner}){
+  const [showAdd,setShowAdd]=useState(false);
+  const [editIdx,setEditIdx]=useState(null);
+  const [form,setForm]=useState({nome:'',valor:'',cat:'Moradia'});
+
+  const CATS_FIXAS=['Moradia','Família','Saúde','Telecom','Alimentação','Transporte','Outros'];
+
+  const openNew=()=>{setEditIdx(null);setForm({nome:'',valor:'',cat:'Moradia'});setShowAdd(true)};
+  const openEdit=(f,i)=>{setEditIdx(i);setForm({nome:f.nome,valor:String(f.valor),cat:f.cat||'Outros'});setShowAdd(true)};
+  const closeForm=()=>{setShowAdd(false);setEditIdx(null);setForm({nome:'',valor:'',cat:'Moradia'})};
+
+  const save=()=>{
+    if(!form.nome||!form.valor)return;
+    const item={nome:form.nome,valor:parseFloat(form.valor),cat:form.cat};
+    let next=[...fixas];
+    if(editIdx!==null){next[editIdx]=item}
+    else{next.push(item)}
+    saveFixas(next);
+    closeForm();
+  };
+
+  const remove=(i)=>{
+    const next=fixas.filter((_,idx)=>idx!==i);
+    saveFixas(next);
+  };
+
+  if(!isWagner){
+    return(
+      <div style={{flex:1,overflowY:'auto',padding:'0 16px'}}>
+        <div style={{fontSize:18,fontWeight:700,padding:'16px 0 12px'}}>Despesas Fixas</div>
+        <div style={{...card,textAlign:'center',padding:'40px 20px',color:'#64748B'}}>
+          <div style={{fontSize:36,marginBottom:12}}>📋</div>
+          <div style={{fontSize:14}}>Suas despesas fixas ainda não foram cadastradas. Use o botão + para começar.</div>
+        </div>
+        <button onClick={openNew} style={{width:'100%',padding:'12px',background:'#10B981',border:'none',borderRadius:10,color:'#fff',fontSize:15,fontWeight:600,marginTop:10}}>+ Adicionar despesa fixa</button>
+        {showAdd&&<FixaForm form={form} setForm={setForm} CATS_FIXAS={CATS_FIXAS} save={save} closeForm={closeForm} editIdx={editIdx}/>}
+        <div style={{height:20}}/>
+      </div>
+    );
+  }
+
+  const total=fixas.reduce((s,f)=>s+f.valor,0);
+  const porCategoria=fixas.reduce((acc,f)=>{const c=f.cat||'Outros';acc[c]=(acc[c]||0)+f.valor;return acc},{});
+
+  return(
+    <div style={{flex:1,overflowY:'auto',padding:'0 16px'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'16px 0 12px'}}>
+        <div style={{fontSize:18,fontWeight:700}}>Despesas Fixas</div>
+        <button onClick={()=>showAdd?closeForm():openNew()} style={{width:36,height:36,borderRadius:10,background:showAdd?'#334155':'#10B981',border:'none',display:'flex',alignItems:'center',justifyContent:'center'}}><Ico n="plus" sz={16} c="#fff"/></button>
+      </div>
+
+      {showAdd&&<FixaForm form={form} setForm={setForm} CATS_FIXAS={CATS_FIXAS} save={save} closeForm={closeForm} editIdx={editIdx}/>}
+
+      <div style={{...card,background:'rgba(244,63,94,0.08)',marginBottom:10}}>
+        <div style={{fontSize:11,color:'#94A3B8',marginBottom:4}}>Total de despesas fixas mensais</div>
+        <div style={{fontSize:26,fontWeight:700,color:'#F43F5E'}}>{fmt(total)}</div>
+      </div>
+
+      {Object.keys(porCategoria).length>0&&<div style={{...card,marginBottom:10}}>
+        <div style={{fontSize:13,fontWeight:600,marginBottom:10}}>Por categoria</div>
+        {Object.entries(porCategoria).sort((a,b)=>b[1]-a[1]).map(([cat,val])=>{
+          const pct=total>0?(val/total)*100:0;
+          return(
+            <div key={cat} style={{marginBottom:8}}>
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:13,marginBottom:3}}>
+                <span style={{color:'#94A3B8'}}>{cat}</span>
+                <span style={{fontWeight:600}}>{fmt(val)}</span>
+              </div>
+              <div style={{background:'rgba(255,255,255,0.08)',borderRadius:3,height:5}}><div style={{height:5,borderRadius:3,width:pct.toFixed(1)+'%',background:'#8B5CF6'}}/></div>
+            </div>
+          );
+        })}
+      </div>}
+
+      <div style={card}>
+        <div style={{fontSize:13,fontWeight:600,marginBottom:10}}>Itens ({fixas.length})</div>
+        {fixas.length===0?(
+          <div style={{textAlign:'center',padding:'30px 10px',color:'#64748B',fontSize:13}}>Nenhuma despesa fixa cadastrada</div>
+        ):fixas.map((f,i)=>(
+          <div key={i} onClick={()=>openEdit(f,i)} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 0',borderTop:i>0?'0.5px solid rgba(255,255,255,0.06)':'none',cursor:'pointer'}}>
+            <div style={{flex:1}}>
+              <div style={{fontSize:14,color:'#F1F5F9'}}>{f.nome}</div>
+              <div style={{fontSize:11,color:'#64748B'}}>{f.cat||'Outros'}</div>
+            </div>
+            <span style={{fontSize:14,fontWeight:600,color:'#F43F5E'}}>{fmt(f.valor)}</span>
+            <button onClick={(ev)=>{ev.stopPropagation();remove(i)}} style={{background:'none',border:'none',padding:6,borderRadius:6,display:'flex'}}><Ico n="trash" sz={15} c="#64748B"/></button>
+          </div>
+        ))}
+      </div>
+      <div style={{height:20}}/>
+    </div>
+  );
+}
+
+function FixaForm({form,setForm,CATS_FIXAS,save,closeForm,editIdx}){
+  return(
+    <div style={{...card,marginBottom:10,animation:'fadeIn 0.2s ease'}}>
+      <div style={{fontSize:13,fontWeight:600,marginBottom:12}}>{editIdx!==null?'Editar despesa fixa':'Nova despesa fixa'}</div>
+      <div style={{marginBottom:10}}>
+        <div style={{fontSize:11,color:'#64748B',marginBottom:4}}>Nome</div>
+        <input value={form.nome} onChange={e=>setForm(p=>({...p,nome:e.target.value}))} placeholder="Ex: Aluguel" style={iS}/>
+      </div>
+      <div style={{marginBottom:10}}>
+        <div style={{fontSize:11,color:'#64748B',marginBottom:4}}>Valor mensal (R$)</div>
+        <input type="number" value={form.valor} onChange={e=>setForm(p=>({...p,valor:e.target.value}))} placeholder="0,00" style={iS}/>
+      </div>
+      <div style={{marginBottom:12}}>
+        <div style={{fontSize:11,color:'#64748B',marginBottom:4}}>Categoria</div>
+        <select value={form.cat} onChange={e=>setForm(p=>({...p,cat:e.target.value}))} style={iS}>
+          {CATS_FIXAS.map(c=><option key={c} value={c}>{c}</option>)}
+        </select>
+      </div>
+      <div style={{display:'flex',gap:8}}>
+        <button onClick={closeForm} style={{flex:1,padding:'12px',background:'rgba(255,255,255,0.06)',border:'none',borderRadius:10,color:'#94A3B8',fontSize:15,fontWeight:600}}>Cancelar</button>
+        <button onClick={save} style={{flex:2,padding:'12px',background:'#10B981',border:'none',borderRadius:10,color:'#fff',fontSize:15,fontWeight:600}}>{editIdx!==null?'Salvar alterações':'Adicionar'}</button>
+      </div>
+    </div>
+  );
+}
+
+// ── Painel ───────────────────────────────────────────────────────────
+function DashTab({rM,eM,sM,rA,lP,isWagner,fixasMes,cartoesMes}){
+  const das=1518*0.05+5;
+  return(
+    <div style={{flex:1,overflowY:'auto',padding:'0 16px'}}>
+      <div style={{fontSize:18,fontWeight:700,padding:'16px 0 12px'}}>
+        {new Date().toLocaleDateString('pt-BR',{month:'long',year:'numeric'}).replace(/^\w/,c=>c.toUpperCase())}
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
+        {[{l:'Receita do mês',v:rM,c:'#10B981',bg:'rgba(16,185,129,0.1)'},{l:'Despesas lançadas',v:eM,c:'#F43F5E',bg:'rgba(244,63,94,0.1)'}].map(c=>(
+          <div key={c.l} style={{background:c.bg,borderRadius:14,padding:'14px',border:'0.5px solid rgba(255,255,255,0.06)'}}>
+            <div style={{fontSize:11,color:'#94A3B8',marginBottom:6}}>{c.l}</div>
+            <div style={{fontSize:20,fontWeight:700,color:c.c}}>{fmtK(c.v)}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{background:sM>=0?'rgba(59,130,246,0.1)':'rgba(244,63,94,0.1)',borderRadius:14,padding:'14px',border:'0.5px solid rgba(255,255,255,0.06)',marginBottom:10}}>
+        <div style={{fontSize:11,color:'#94A3B8',marginBottom:4}}>Saldo líquido</div>
+        <div style={{fontSize:28,fontWeight:700,color:sM>=0?'#3B82F6':'#F43F5E'}}>{fmt(sM)}</div>
+      </div>
+      <div style={card}>
+        <div style={{display:'flex',justifyContent:'space-between',marginBottom:8}}><span style={{fontSize:13,color:'#94A3B8'}}>Limite anual MEI</span><span style={{fontSize:13,fontWeight:600,color:lP>90?'#F43F5E':lP>70?'#F59E0B':'#10B981'}}>{lP.toFixed(1)}%</span></div>
+        <div style={{background:'rgba(255,255,255,0.08)',borderRadius:4,height:10,overflow:'hidden'}}><div style={{height:10,borderRadius:4,width:lP+'%',background:lP>90?'#F43F5E':lP>70?'#F59E0B':'#10B981',transition:'width 0.4s'}}/></div>
+        <div style={{fontSize:11,color:'#64748B',marginTop:6}}>{fmt(rA)} de R$ 81.000</div>
+      </div>
+      {isWagner&&<>
+        <div style={card}>
+          <div style={{fontSize:13,fontWeight:600,marginBottom:10}}>Reservas jul/26 ✅</div>
+          {[{i:'🛡️',l:'Emergência',v:17000,c:'#3B82F6'},{i:'👶',l:'Bebê (dez)',v:5000,c:'#8B5CF6'}].map(r=>(
+            <div key={r.l} style={{marginBottom:10}}>
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:13,marginBottom:5}}><span style={{color:'#94A3B8'}}>{r.i} {r.l}</span><span style={{color:r.c,fontWeight:600}}>{fmt(r.v)} ✅</span></div>
+              <div style={{background:'rgba(255,255,255,0.08)',borderRadius:4,height:6}}><div style={{height:6,borderRadius:4,width:'100%',background:r.c}}/></div>
+            </div>
+          ))}
+        </div>
+        <div style={card}>
+          <div style={{fontSize:13,fontWeight:600,marginBottom:10}}>Saídas previstas este mês</div>
+          {[{l:'Despesas fixas',v:fixasMes,c:'#F43F5E'},{l:'Cartões (parcelas)',v:cartoesMes,c:'#F59E0B'}].map(r=>(
+            <div key={r.l} style={{display:'flex',justifyContent:'space-between',fontSize:14,padding:'6px 0',borderTop:'0.5px solid rgba(255,255,255,0.06)'}}><span style={{color:'#94A3B8'}}>{r.l}</span><span style={{color:r.c,fontWeight:600}}>{fmt(r.v)}</span></div>
+          ))}
+          <div style={{display:'flex',justifyContent:'space-between',fontSize:15,fontWeight:700,padding:'8px 0 0',borderTop:'1px solid rgba(255,255,255,0.1)',marginTop:4}}><span>Total saídas</span><span style={{color:'#F43F5E'}}>{fmt(fixasMes+cartoesMes)}</span></div>
+        </div>
+      </>}
+      <div style={card}>
+        <div style={{fontSize:13,fontWeight:600,marginBottom:10}}>DAS estimado</div>
+        {[{l:'INSS (5% sal. mín.)',v:75.90},{l:'ISS fixo (serviços)',v:5}].map(r=>(
+          <div key={r.l} style={{display:'flex',justifyContent:'space-between',fontSize:13,padding:'6px 0',borderTop:'0.5px solid rgba(255,255,255,0.06)'}}><span style={{color:'#64748B'}}>{r.l}</span><span>{fmt(r.v)}</span></div>
+        ))}
+        <div style={{display:'flex',justifyContent:'space-between',fontSize:15,fontWeight:700,padding:'10px 0 0',borderTop:'1px solid rgba(255,255,255,0.1)',marginTop:4}}><span>Total DAS</span><span style={{color:'#3B82F6'}}>{fmt(80.90)}</span></div>
+      </div>
+      <div style={{height:20}}/>
+    </div>
+  );
+}
+
+// ── Gráficos ─────────────────────────────────────────────────────────
+function GraficosTab({entries,mes,ano,sumMes,isWagner}){
+  const barRef=useRef(null);
+  const pieRef=useRef(null);
+  const lineRef=useRef(null);
+  const cartoesRef=useRef(null);
+  const chartsRef=useRef({});
+
+  // Dados: receita vs despesa últimos 6 meses
+  const ultimos6=Array.from({length:6},(_,i)=>{
+    const d=new Date(ano,mes-5+i,1);
+    return{m:MESES_NOME[d.getMonth()],r:sumMes('income',d.getMonth(),d.getFullYear()),e:sumMes('expense',d.getMonth(),d.getFullYear())};
+  });
+
+  // Despesas por categoria mês atual
+  const catE=entries.filter(e=>{const d=new Date((e.date||td())+'T12:00:00');return e.kind==='expense'&&d.getMonth()===mes&&d.getFullYear()===ano})
+    .reduce((a,e)=>{a[e.category]=(a[e.category]||0)+(e.amount||0);return a},{});
+  const catLabels=Object.keys(catE);
+  const catValues=Object.values(catE);
+  const catColors=['#10B981','#3B82F6','#8B5CF6','#F59E0B','#F43F5E','#06B6D4','#EC4899','#84CC16'];
+
+  // Saldo acumulado ano
+  const mesesAno=Array.from({length:mes+1},(_,i)=>{
+    const r=sumMes('income',i,ano),e=sumMes('expense',i,ano);
+    return{m:MESES_NOME[i],s:r-e};
+  });
+  let acum=0;
+  const acumData=mesesAno.map(m=>{acum+=m.s;return acum});
+
+  // Cartões por mês (só Wagner)
+  const cartoesData=isWagner?MESES_PLANO.map((_,i)=>WAGNER_CARTOES.filter(c=>c.meses.includes(i+6)).reduce((s,c)=>s+c.valor,0)):[];
+
+  const chartOpts={responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#94A3B8',font:{size:11}}},tooltip:{callbacks:{label:ctx=>' '+fmt(ctx.raw)}}},scales:{x:{ticks:{color:'#64748B',font:{size:11}},grid:{color:'rgba(255,255,255,0.04)'}},y:{ticks:{color:'#64748B',font:{size:11},callback:v=>fmtK(v)},grid:{color:'rgba(255,255,255,0.06)'}}}};
+
+  useEffect(()=>{
+    const destroy=r=>{if(chartsRef.current[r]){chartsRef.current[r].destroy();delete chartsRef.current[r]}};
+
+    // Bar: receita vs despesa
+    if(barRef.current){destroy('bar');chartsRef.current.bar=new Chart(barRef.current,{type:'bar',data:{labels:ultimos6.map(m=>m.m),datasets:[{label:'Receita',data:ultimos6.map(m=>m.r),backgroundColor:'rgba(16,185,129,0.7)',borderRadius:6},{label:'Despesa',data:ultimos6.map(m=>m.e),backgroundColor:'rgba(244,63,94,0.7)',borderRadius:6}]},options:{...chartOpts,plugins:{...chartOpts.plugins,title:{display:true,text:'Receita vs Despesa (6 meses)',color:'#F1F5F9',font:{size:13,weight:'600'}}}}});}
+
+    // Pie: categorias
+    if(pieRef.current&&catLabels.length>0){destroy('pie');chartsRef.current.pie=new Chart(pieRef.current,{type:'doughnut',data:{labels:catLabels.map(c=>c.charAt(0).toUpperCase()+c.slice(1)),datasets:[{data:catValues,backgroundColor:catColors.slice(0,catLabels.length),borderWidth:0,hoverOffset:8}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{color:'#94A3B8',font:{size:11},padding:12}},title:{display:true,text:'Despesas por categoria',color:'#F1F5F9',font:{size:13,weight:'600'}},tooltip:{callbacks:{label:ctx=>' '+fmt(ctx.raw)+' ('+Math.round(ctx.parsed/catValues.reduce((a,b)=>a+b,0)*100)+'%)'}}}}});}
+
+    // Line: saldo acumulado
+    if(lineRef.current){destroy('line');chartsRef.current.line=new Chart(lineRef.current,{type:'line',data:{labels:mesesAno.map(m=>m.m),datasets:[{label:'Saldo acumulado',data:acumData,borderColor:'#3B82F6',backgroundColor:'rgba(59,130,246,0.1)',fill:true,tension:0.4,pointBackgroundColor:'#3B82F6',pointRadius:4}]},options:{...chartOpts,plugins:{...chartOpts.plugins,title:{display:true,text:'Evolução do saldo ('+ano+')',color:'#F1F5F9',font:{size:13,weight:'600'}}}}});}
+
+    // Bar: cartões por mês (Wagner)
+    if(cartoesRef.current&&isWagner){destroy('cartoes');chartsRef.current.cartoes=new Chart(cartoesRef.current,{type:'bar',data:{labels:MESES_PLANO,datasets:[{label:'Parcelas',data:cartoesData,backgroundColor:cartoesData.map(v=>v>0?'rgba(245,158,11,0.7)':'rgba(16,185,129,0.3)'),borderRadius:6}]},options:{...chartOpts,plugins:{...chartOpts.plugins,title:{display:true,text:'Cartões por mês (Jul–Dez/26)',color:'#F1F5F9',font:{size:13,weight:'600'}}}}});}
+
+    return()=>{Object.values(chartsRef.current).forEach(c=>c.destroy());chartsRef.current={}};
+  },[entries.length,mes,ano]);
+
+  return(
+    <div style={{flex:1,overflowY:'auto',padding:'0 16px'}}>
+      <div style={{fontSize:18,fontWeight:700,padding:'16px 0 12px'}}>Gráficos</div>
+
+      <div style={{...card,height:240}}>
+        <canvas ref={barRef}/>
+      </div>
+
+      {catLabels.length>0?<div style={{...card,height:260}}><canvas ref={pieRef}/></div>
+      :<div style={{...card,textAlign:'center',padding:'30px',color:'#64748B',fontSize:13}}>
+        Adicione despesas para ver o gráfico de categorias 📊
+      </div>}
+
+      <div style={{...card,height:220}}>
+        <canvas ref={lineRef}/>
+      </div>
+
+      {isWagner&&<div style={{...card,height:220}}>
+        <canvas ref={cartoesRef}/>
+      </div>}
+
+      {isWagner&&<div style={{...card,background:'rgba(245,158,11,0.08)'}}>
+        <div style={{fontSize:13,fontWeight:600,marginBottom:10,color:'#F59E0B'}}>🎯 Lazer com a Marcela</div>
+        {[{m:'Julho',v:'R$ 0',o:'Mês de execução'},{m:'Agosto',v:'R$ 900',o:'Cartão pesado'},{m:'Set–Nov',v:'R$ 1.200',o:'Saldo maior'},{m:'Dezembro',v:'R$ 1.500+',o:'Zero cartão 🎉'}].map((r,i)=>(
+          <div key={i} style={{display:'flex',justifyContent:'space-between',fontSize:13,padding:'6px 0',borderTop:i>0?'0.5px solid rgba(245,158,11,0.15)':'none'}}>
+            <span style={{color:'#94A3B8'}}>{r.m} <span style={{fontSize:11,color:'#64748B'}}>· {r.o}</span></span>
+            <span style={{fontWeight:600,color:'#F59E0B'}}>{r.v}</span>
+          </div>
+        ))}
+      </div>}
+      <div style={{height:20}}/>
+    </div>
+  );
+}
+
+// ── Lançamentos ──────────────────────────────────────────────────────
+function EntriesTab({entries,addEntry,delEntry,updateEntry}){
+  const [showAdd,setShowAdd]=useState(false);
+  const [saving,setSaving]=useState(false);
+  const [editId,setEditId]=useState(null);
+  const [form,setForm]=useState({kind:'income',desc:'',amount:'',category:'servico',date:td(),forma:'PIX',parcelas:1});
+  const sorted=[...entries].sort((a,b)=>new Date(b.date||td())-new Date(a.date||td()));
+  const CATS=form.kind==='income'?CAT_INC:CAT_EXP;
+
+  const openNew=()=>{
+    setEditId(null);
+    setForm({kind:'income',desc:'',amount:'',category:'servico',date:td(),forma:'PIX',parcelas:1});
+    setShowAdd(true);
+  };
+
+  const openEdit=(e)=>{
+    setEditId(e.id);
+    setForm({kind:e.kind,desc:e.desc,amount:String(e.amount),category:e.category||'servico',date:e.date||td(),forma:e.forma||'PIX',parcelas:e.parcelas||1});
+    setShowAdd(true);
+  };
+
+  const closeForm=()=>{
+    setShowAdd(false);setEditId(null);
+    setForm({kind:'income',desc:'',amount:'',category:'servico',date:td(),forma:'PIX',parcelas:1});
+  };
+
+  const save=async()=>{
+    if(!form.desc||!form.amount||saving)return;
+    setSaving(true);
+    const data={...form,amount:parseFloat(form.amount)};
+    if(editId){await updateEntry(editId,data)}
+    else{await addEntry(data)}
+    setSaving(false);closeForm();
+  };
+
+  return(
+    <div style={{flex:1,overflowY:'auto',padding:'0 16px'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'16px 0 12px'}}>
+        <div style={{fontSize:18,fontWeight:700}}>Lançamentos</div>
+        <button onClick={()=>showAdd?closeForm():openNew()} style={{width:36,height:36,borderRadius:10,background:showAdd?'#334155':'#10B981',border:'none',display:'flex',alignItems:'center',justifyContent:'center'}}><Ico n="plus" sz={16} c="#fff"/></button>
+      </div>
+
+      {showAdd&&<div style={{...card,marginBottom:10,animation:'fadeIn 0.2s ease'}}>
+        <div style={{fontSize:13,fontWeight:600,marginBottom:12}}>{editId?'Editar lançamento':'Novo lançamento'}</div>
+        <div style={{display:'flex',gap:6,marginBottom:12}}>
+          {[['income','📈 Receita'],['expense','📉 Despesa']].map(([k,l])=>(
+            <button key={k} onClick={()=>setForm(f=>({...f,kind:k,category:k==='income'?'servico':'moradia'}))} style={{flex:1,padding:'8px',borderRadius:8,border:'none',background:form.kind===k?(k==='income'?'rgba(16,185,129,0.25)':'rgba(244,63,94,0.25)'):'rgba(255,255,255,0.06)',color:form.kind===k?(k==='income'?'#10B981':'#F43F5E'):'#94A3B8',fontSize:13,fontWeight:600}}>{l}</button>
+          ))}
+        </div>
+        {[{f:'desc',l:'Descrição',t:'text',p:'Ex: Serviço de design'},{f:'amount',l:'Valor (R$)',t:'number',p:'0,00'}].map(f=>(
+          <div key={f.f} style={{marginBottom:10}}><div style={{fontSize:11,color:'#64748B',marginBottom:4}}>{f.l}</div><input type={f.t} value={form[f.f]} onChange={e=>setForm(p=>({...p,[f.f]:e.target.value}))} placeholder={f.p} style={iS}/></div>
+        ))}
+        <div style={{marginBottom:10}}><div style={{fontSize:11,color:'#64748B',marginBottom:4}}>Categoria</div>
+          <select value={form.category} onChange={e=>setForm(p=>({...p,category:e.target.value}))} style={iS}>
+            {CATS.map(c=><option key={c.v} value={c.v}>{c.l}</option>)}
+          </select>
+        </div>
+        <div style={{marginBottom:10}}><div style={{fontSize:11,color:'#64748B',marginBottom:4}}>Forma de pagamento</div>
+          <select value={form.forma} onChange={e=>setForm(p=>({...p,forma:e.target.value}))} style={iS}>
+            {FORMAS_PAG.map(f=><option key={f} value={f}>{f}</option>)}
+          </select>
+        </div>
+        {form.forma==='Cartão de crédito'&&<div style={{marginBottom:10}}><div style={{fontSize:11,color:'#64748B',marginBottom:4}}>Parcelas</div>
+          <select value={form.parcelas} onChange={e=>setForm(p=>({...p,parcelas:parseInt(e.target.value)}))} style={iS}>
+            {Array.from({length:12},(_,i)=>i+1).map(n=><option key={n} value={n}>{n===1?'À vista':n+'x de '+fmt((parseFloat(form.amount)||0)/n)}</option>)}
+          </select>
+        </div>}
+        <div style={{marginBottom:12}}><div style={{fontSize:11,color:'#64748B',marginBottom:4}}>Data</div><input type="date" value={form.date} onChange={e=>setForm(p=>({...p,date:e.target.value}))} style={iS}/></div>
+        <div style={{display:'flex',gap:8}}>
+          {editId&&<button onClick={closeForm} style={{flex:1,padding:'12px',background:'rgba(255,255,255,0.06)',border:'none',borderRadius:10,color:'#94A3B8',fontSize:15,fontWeight:600}}>Cancelar</button>}
+          <button onClick={save} disabled={saving} style={{flex:2,padding:'12px',background:saving?'#334155':'#10B981',border:'none',borderRadius:10,color:'#fff',fontSize:15,fontWeight:600,cursor:saving?'default':'pointer'}}>{saving?'Salvando...':editId?'Salvar alterações':'Salvar lançamento'}</button>
+        </div>
+      </div>}
+
+      {sorted.length===0?<div style={{textAlign:'center',padding:'60px 20px',color:'#64748B'}}>
+        <div style={{fontSize:40,marginBottom:12}}>📋</div>
+        <div style={{fontSize:15}}>Nenhum lançamento ainda</div>
+        <div style={{fontSize:13,marginTop:6}}>Toque em + para adicionar</div>
+      </div>:sorted.map(e=>(
+        <div key={e.id} onClick={()=>openEdit(e)} style={{display:'flex',alignItems:'center',gap:12,padding:'12px 0',borderBottom:'0.5px solid rgba(255,255,255,0.06)',animation:'fadeIn 0.15s ease',cursor:'pointer'}}>
+          <div style={{width:38,height:38,borderRadius:10,background:e.kind==='income'?'rgba(16,185,129,0.15)':'rgba(244,63,94,0.15)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0}}>{e.kind==='income'?'📈':'📉'}</div>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:14,fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{e.desc}</div>
+            <div style={{fontSize:11,color:'#64748B',marginTop:2}}>
+              {[e.category,e.forma,e.parcelas>1?e.parcelas+'x':null,new Date((e.date||td())+'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'short'})].filter(Boolean).join(' · ')}
+            </div>
+          </div>
+          <div style={{fontSize:15,fontWeight:700,color:e.kind==='income'?'#10B981':'#F43F5E',whiteSpace:'nowrap'}}>{e.kind==='income'?'+':'-'}{fmtK(e.amount||0)}</div>
+          <button onClick={(ev)=>{ev.stopPropagation();delEntry(e.id)}} style={{background:'none',border:'none',padding:6,borderRadius:6,display:'flex'}}><Ico n="trash" sz={16} c="#64748B"/></button>
+        </div>
+      ))}
+      <div style={{height:20}}/>
+    </div>
+  );
+}
+
+// ── Plano ────────────────────────────────────────────────────────────
+function PlanTab({checklist,saveCk,feitos,ckP,isWagner}){
+  const toggle=i=>{const n=[...checklist];n[i].feito=!n[i].feito;saveCk(n)};
+  return(
+    <div style={{flex:1,overflowY:'auto',padding:'0 16px'}}>
+      <div style={{fontSize:18,fontWeight:700,padding:'16px 0 12px'}}>Plano Jul–Dez/26</div>
+      {isWagner&&checklist.length>0&&<>
+        <div style={card}>
+          <div style={{display:'flex',justifyContent:'space-between',marginBottom:10}}><div style={{fontSize:13,fontWeight:600}}>✅ Checklist de julho</div><div style={{fontSize:13,color:'#10B981',fontWeight:600}}>{feitos}/{checklist.length}</div></div>
+          <div style={{background:'rgba(255,255,255,0.08)',borderRadius:4,height:6,marginBottom:14,overflow:'hidden'}}><div style={{height:6,borderRadius:4,width:ckP+'%',background:ckP===100?'#10B981':'#3B82F6',transition:'width 0.4s'}}/></div>
+          {checklist.map((c,i)=>(
+            <div key={i} onClick={()=>toggle(i)} style={{display:'flex',gap:12,padding:'10px 0',borderTop:i>0?'0.5px solid rgba(255,255,255,0.06)':'none',cursor:'pointer',alignItems:'flex-start'}}>
+              <div style={{width:22,height:22,borderRadius:'50%',border:c.feito?'none':'1.5px solid #334155',background:c.feito?'#10B981':'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,marginTop:1}}>
+                {c.feito&&<Ico n="check" sz={12} c="#fff"/>}
+              </div>
+              <div><div style={{fontSize:13,fontWeight:500,color:c.feito?'#64748B':'#F1F5F9',textDecoration:c.feito?'line-through':'none'}}>{c.a}</div><div style={{fontSize:11,color:c.feito?'#10B981':'#64748B',marginTop:2}}>{c.i}</div></div>
+            </div>
+          ))}
+          {ckP===100&&<div style={{marginTop:12,background:'rgba(16,185,129,0.15)',borderRadius:8,padding:'10px',textAlign:'center',fontSize:14,fontWeight:600,color:'#10B981'}}>🎉 Julho executado! Você mudou sua vida financeira.</div>}
+        </div>
+        <div style={card}>
+          <div style={{fontSize:13,fontWeight:600,marginBottom:14}}>Saldo livre por mês</div>
+          {MESES_PLANO.map((m,i)=>{const max=Math.max(...SALDOS_PLANO),pct=(SALDOS_PLANO[i]/max)*100;return(
+            <div key={i} style={{marginBottom:12}}>
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:13,marginBottom:4}}>
+                <span style={{color:'#94A3B8',display:'flex',gap:6,alignItems:'center'}}>{m}{i===5&&<span style={{fontSize:10,background:'rgba(139,92,246,0.2)',color:'#8B5CF6',padding:'1px 6px',borderRadius:20}}>👶</span>}{i===5&&<span style={{fontSize:10,background:'rgba(16,185,129,0.2)',color:'#10B981',padding:'1px 6px',borderRadius:20}}>zero cartão</span>}</span>
+                <span style={{fontWeight:600,color:SALDOS_PLANO[i]>4000?'#10B981':'#F59E0B'}}>{fmt(SALDOS_PLANO[i])}</span>
+              </div>
+              <div style={{background:'rgba(255,255,255,0.08)',borderRadius:4,height:6}}><div style={{height:6,borderRadius:4,width:pct.toFixed(1)+'%',background:i===0?'#3B82F6':'#10B981'}}/></div>
+            </div>
+          )})}
+        </div>
+        <div style={card}>
+          <div style={{fontSize:13,fontWeight:600,marginBottom:12}}>Dívidas em dez/26</div>
+          {[{l:'Moto (R$ 44k)',s:'✅ Eliminada em julho',c:'#10B981'},{l:'MEI (R$ 4k)',s:'✅ Quitado em julho',c:'#10B981'},{l:'Cartão Militão',s:'⏳ Encerra out/26',c:'#F59E0B'},{l:'Cartão Roger',s:'⏳ Encerra nov/26',c:'#F59E0B'},{l:'Cartão Ebó',s:'⏳ Encerra out/26',c:'#F59E0B'}].map((d,i)=>(
+            <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:13,padding:'7px 0',borderTop:i>0?'0.5px solid rgba(255,255,255,0.06)':'none'}}>
+              <span style={{color:'#94A3B8'}}>{d.l}</span><span style={{color:d.c,fontWeight:500,fontSize:12}}>{d.s}</span>
+            </div>
+          ))}
+          <div style={{marginTop:12,background:'rgba(16,185,129,0.12)',borderRadius:8,padding:'10px',textAlign:'center',fontSize:13,fontWeight:600,color:'#10B981'}}>Dezembro: zero dívidas + R$ 22k em reservas 🎉</div>
+        </div>
+      </>}
+      {!isWagner&&<div style={{...card,textAlign:'center',padding:'40px 20px',color:'#64748B'}}>
+        <div style={{fontSize:36,marginBottom:12}}>📋</div>
+        <div style={{fontSize:14}}>Use Lançamentos para registrar suas receitas e despesas. Os gráficos e painel atualizam automaticamente.</div>
+      </div>}
+      <div style={{height:20}}/>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
